@@ -1,5 +1,37 @@
 #include "myheader.h"
 
+static int close_proc_file(FILE *fp)
+{
+	int result = EXIT_SUCCESS;
+	if(ferror(fp))
+	{
+		fprintf(stderr, "Error reading /proc data.\n");
+		result = EXIT_FAILURE;
+	}
+	if(fclose(fp) == EOF)
+	{
+		perror("fclose() error : ");
+		result = EXIT_FAILURE;
+	}
+	return result;
+}
+
+static int run_query_command(const char *command)
+{
+	int status = system(command);
+	if(status == -1)
+	{
+		perror("system() error : ");
+		return EXIT_FAILURE;
+	}
+	if(!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+	{
+		fprintf(stderr, "Query command failed.\n");
+		return EXIT_FAILURE;
+	}
+	return EXIT_SUCCESS;
+}
+
 /* Preserve the existing access checks and diagnostics for /proc text files. */
 static FILE *open_proc_file(const char *path)
 {
@@ -22,8 +54,9 @@ static FILE *open_proc_file(const char *path)
 	return fp;
 }
 
-void print_process_fds(int pid) //f옵션 처리하는 함수입니다.
+int print_process_fds(int pid) //f옵션 처리하는 함수입니다.
 {
+	int result = EXIT_SUCCESS;
 	struct dirent *entry;
 	DIR *directory;
 	char path[512];
@@ -35,17 +68,17 @@ void print_process_fds(int pid) //f옵션 처리하는 함수입니다.
 	if(access(path, F_OK) == -1 && errno == ENOENT)
 	{
 		printf("%s doesn't exist\n", path);
-		return ;
+		return EXIT_FAILURE;
 	}
 	if(access(path, R_OK) == -1 && errno == EACCES)
 	{
 		printf("%s can't be read.\n", path);
-		return ;
+		return EXIT_FAILURE;
 	}
 	if((directory = opendir(path)) == NULL)
 	{
 		printf("opendir() error\n");
-		return ;
+		return EXIT_FAILURE;
 	}
 	while((entry = readdir(directory)) != NULL)
 	{
@@ -65,7 +98,7 @@ void print_process_fds(int pid) //f옵션 처리하는 함수입니다.
 				free(link_target);
 				closedir(directory);
 				perror("realloc() error : ");
-				return;
+				return EXIT_FAILURE;
 			}
 			link_target = next;
 			length = readlink(path, link_target, capacity);
@@ -76,6 +109,8 @@ void print_process_fds(int pid) //f옵션 처리하는 함수입니다.
 		if(length < 0)
 		{
 			free(link_target);
+			perror(path);
+			result = EXIT_FAILURE;
 			continue;
 		}
 		link_target[length] = '\0';
@@ -85,11 +120,12 @@ void print_process_fds(int pid) //f옵션 처리하는 함수입니다.
 	if(closedir(directory) < 0)
 	{
 		printf("closedir() error\n");
+		result = EXIT_FAILURE;
 	}
+	return result;
 }
 
-
-void print_process_status(int pid) //t옵션을 처리하는 함수입니다.
+int print_process_status(int pid) //t옵션을 처리하는 함수입니다.
 {	
 	FILE *fp;
 	char path[512] = "/proc/";
@@ -99,11 +135,20 @@ void print_process_status(int pid) //t옵션을 처리하는 함수입니다.
 	sprintf(path, "/proc/%d/status", pid);
 	fp = open_proc_file(path);
 	if(fp == NULL)
-		return;
+		return EXIT_FAILURE;
 	for(int c = 0; c < 9; c++)
 	{
 		if(getline(&buf, &capacity, fp) < 0)
 			break;
+		if(strncmp(buf, "Name:", 5) == 0)
+		{
+			char *name = buf + 5;
+			if(*name == '\t' || *name == ' ')
+				++name;
+			name[strcspn(name, "\n")] = '\0';
+			printf("Name: %s\n", name);
+			continue;
+		}
 		char *token = strtok(buf, " \t\n");
 		if(token == NULL)
 			continue;
@@ -152,11 +197,11 @@ void print_process_status(int pid) //t옵션을 처리하는 함수입니다.
 		}
 	}
 	free(buf);
-	fclose(fp);
+	return close_proc_file(fp);
 }
 
 
-void print_process_cmdline(int pid)//c옵션 처리하는 함수입니다.
+int print_process_cmdline(int pid)//c옵션 처리하는 함수입니다.
 {
 	FILE *fp;
 	char path[512] = "/proc/";
@@ -166,18 +211,18 @@ void print_process_cmdline(int pid)//c옵션 처리하는 함수입니다.
 	sprintf(path, "/proc/%d/cmdline", pid);
 	fp = open_proc_file(path);
 	if(fp == NULL)
-		return;
+		return EXIT_FAILURE;
 	int arg_index = 0;
 	while(getdelim(&buf, &capacity, '\0', fp) != -1)
 	{
 		printf("argv[%d] : %s\n", arg_index++, buf);
 	}
 	free(buf);
-	fclose(fp);
+	return close_proc_file(fp);
 }
 
 
-void print_process_io(int pid) //n옵션 처리하는 함수입니다.
+int print_process_io(int pid) //n옵션 처리하는 함수입니다.
 {
 	FILE *fp;
 	char path[512] = "/proc/";
@@ -186,7 +231,7 @@ void print_process_io(int pid) //n옵션 처리하는 함수입니다.
 	sprintf(path, "/proc/%d/io", pid);
 	fp = open_proc_file(path);
 	if(fp == NULL)
-		return;
+		return EXIT_FAILURE;
 	while(fgets(buf, 256, fp) != NULL)
 	{
 		char *token = strtok(buf, " \t\n");
@@ -223,7 +268,7 @@ void print_process_io(int pid) //n옵션 처리하는 함수입니다.
 		token = strtok(NULL, " \t\n");
 		printf("%s\n", token ? token : "");
 	}
-	fclose(fp);
+	return close_proc_file(fp);
 }
 
 
@@ -256,56 +301,90 @@ static char *quote_shell_argument(const char *text)
 	return quoted;
 }
 
-void print_process_environ(int pid, string_list keywords) //m옵션 처리하는 함수입니다.
+/* Translate the NUL-separated environment without a shell pipeline, so read
+ * and write failures cannot be hidden by a later pipeline command. */
+static int copy_process_environ(const char *path, FILE *output)
 {
-	char path[512] = "/proc/";
-	char shell_command[1024];
-
-	sprintf(path, "/proc/%d/environ", pid);
-	if(access(path, F_OK) == -1 && errno == ENOENT)
+	FILE *fp = open_proc_file(path);
+	if(fp == NULL)
+		return EXIT_FAILURE;
+	int result = EXIT_SUCCESS;
+	char buffer[4096];
+	size_t length;
+	while((length = fread(buffer, 1, sizeof(buffer), fp)) > 0)
 	{
-		printf("%s doesn't exist\n", path);
-		return ;
-	}
-	if(access(path, R_OK) == -1 && errno == EACCES)
-	{
-		printf("%s can't be read.\n", path);
-		return ;
-	}
-	fflush(stdout);
-	if(keywords.count == 0)
-	{
-		sprintf(shell_command, "cat %s | tr '\\000' '\n'", path);
-		system(shell_command);
-	}
-	else
-	{
-		for(int keyword_index = 0; keyword_index < keywords.count; keyword_index++)
+		for(size_t i = 0; i < length; ++i)
+			if(buffer[i] == '\0')
+				buffer[i] = '\n';
+		if(fwrite(buffer, 1, length, output) != length)
 		{
-			char *quoted = quote_shell_argument(keywords.items[keyword_index]);
-			if(quoted == NULL)
-			{
-				perror("malloc() error : ");
-				return;
-			}
-			size_t size = strlen(path) + strlen(quoted) + 64;
-			char *command = malloc(size);
-			if(command == NULL)
-			{
-				free(quoted);
-				perror("malloc() error : ");
-				return;
-			}
-			snprintf(command, size, "cat %s | tr '\\000' '\n' | grep -- %s", path, quoted);
-			system(command);
-			free(command);
-			free(quoted);
+			perror("environment output");
+			result = EXIT_FAILURE;
+			break;
 		}
 	}
+	if(close_proc_file(fp) != EXIT_SUCCESS)
+		result = EXIT_FAILURE;
+	return result;
+}
+
+int print_process_environ(int pid, string_list keywords)
+{
+	char path[512];
+	snprintf(path, sizeof(path), "/proc/%d/environ", pid);
+	fflush(stdout);
+	if(keywords.count == 0)
+		return copy_process_environ(path, stdout);
+
+	int result = EXIT_SUCCESS;
+	for(int i = 0; i < keywords.count; ++i)
+	{
+		char *quoted = quote_shell_argument(keywords.items[i]);
+		if(quoted == NULL)
+		{
+			perror("malloc() error : ");
+			return EXIT_FAILURE;
+		}
+		size_t size = strlen(quoted) + sizeof("grep -- ");
+		char *command = malloc(size);
+		if(command == NULL)
+		{
+			free(quoted);
+			perror("malloc() error : ");
+			return EXIT_FAILURE;
+		}
+		snprintf(command, size, "grep -- %s", quoted);
+		FILE *filter = popen(command, "w");
+		free(command);
+		free(quoted);
+		if(filter == NULL)
+		{
+			perror("popen() error : ");
+			return EXIT_FAILURE;
+		}
+		if(copy_process_environ(path, filter) != EXIT_SUCCESS)
+			result = EXIT_FAILURE;
+		int write_failed = ferror(filter);
+		if(fflush(filter) == EOF)
+			write_failed = 1;
+		if(write_failed)
+		{
+			fprintf(stderr, "Error writing to environment filter.\n");
+			result = EXIT_FAILURE;
+		}
+		int status = pclose(filter);
+		/* grep returns 1 for a valid pattern with no matching lines. */
+		if(status == -1 || !WIFEXITED(status) || WEXITSTATUS(status) > 1)
+		{
+			fprintf(stderr, "Environment filter failed.\n");
+			result = EXIT_FAILURE;
+		}
+	}
+	return result;
 }
 
 
-void print_interrupts(void) //w옵션 처리하는 함수입니다.
+int print_interrupts(void) //w옵션 처리하는 함수입니다.
 {
 	FILE *fp;
 	char path[] = "/proc/interrupts"; // 경로 설정하고
@@ -316,13 +395,12 @@ void print_interrupts(void) //w옵션 처리하는 함수입니다.
 	
 	fp = open_proc_file(path);
 	if(fp == NULL)
-		return;
+		return EXIT_FAILURE;
 
 	if(getline(&buf, &capacity, fp) < 0)
 	{
 		free(buf);
-		fclose(fp);
-		return;
+		return close_proc_file(fp);
 	}
 	token = strtok(buf, " \t\n");
 	while(token != NULL)
@@ -369,11 +447,11 @@ void print_interrupts(void) //w옵션 처리하는 함수입니다.
 		}
 	}
 	free(buf);
-	fclose(fp);
+	return close_proc_file(fp);
 }
 
 
-void print_filesystems(void) //e옵션 처리하는 함수입니다.
+int print_filesystems(void) //e옵션 처리하는 함수입니다.
 {
 	FILE *fp;
 	char path[] = "/proc/filesystems";
@@ -382,7 +460,7 @@ void print_filesystems(void) //e옵션 처리하는 함수입니다.
 
 	fp = open_proc_file(path);
 	if(fp == NULL)
-		return;
+		return EXIT_FAILURE;
 	printf("<<Supported Filesystems>>\n");
 	while(fgets(buf, 256, fp) != NULL)
 	{
@@ -404,11 +482,11 @@ void print_filesystems(void) //e옵션 처리하는 함수입니다.
 		items_on_line++;
 	}
 	printf("\n");
-	fclose(fp);
+	return close_proc_file(fp);
 }
 
 
-void print_uptime(void) //l옵션 처리하는 함수입니다.
+int print_uptime(void) //l옵션 처리하는 함수입니다.
 {
 	FILE *fp;
 	char path[] = "/proc/uptime"; //경로 설정합니다.
@@ -416,29 +494,29 @@ void print_uptime(void) //l옵션 처리하는 함수입니다.
 
 	fp = open_proc_file(path);
 	if(fp == NULL)
-		return;
+		return EXIT_FAILURE;
 	if(fgets(buf, sizeof(buf), fp) == NULL)
 	{
-		fclose(fp);
-		return;
+		return close_proc_file(fp);
 	}
 
 	token = strtok(buf, " \t");
 	printf("Process worked time : %s(sec)\n", token ? token : "");
 	token = strtok(NULL, " \t\n");
 	printf("Process idle time : %s(sec)\n", token ? token : "");
-	fclose(fp);
+	return close_proc_file(fp);
 }
 
 
-void print_kernel_version(void) //v옵션 처리하는 함수입니다.
+int print_kernel_version(void) //v옵션 처리하는 함수입니다.
 {
 	fflush(stdout);
-	system("cat /proc/version");
+	return run_query_command("cat /proc/version");
 }
 
-void print_user_process_attributes(string_list attributes)
+int print_user_process_attributes(string_list attributes)
 {
+	int result = EXIT_SUCCESS;
 	uid_t uid = getuid();
 
 	DIR *directory;
@@ -481,7 +559,7 @@ void print_user_process_attributes(string_list attributes)
 	if((directory = opendir("/proc")) == NULL)
 	{
 		printf("opendir() error\n");
-		return;
+		return EXIT_FAILURE;
 	}
 	while((entry = readdir(directory)) != NULL)
 	{
@@ -530,7 +608,7 @@ void print_user_process_attributes(string_list attributes)
 								free(pids);
 								fclose(fp);
 								closedir(directory);
-								return;
+								return EXIT_FAILURE;
 							}
 							pids = next;
 							pid_capacity = next_capacity;
@@ -549,29 +627,35 @@ void print_user_process_attributes(string_list attributes)
 		if(show_fds)
 		{
 			printf("## Attribute : FILEDES, Target Process ID : %d ##\n", pids[pid_index]);
-			print_process_fds(pids[pid_index]);
+			if(print_process_fds(pids[pid_index]) != EXIT_SUCCESS)
+				result = EXIT_FAILURE;
 		}
 		if(show_cmdline)
 		{
 			printf("## Attribute : CMDLINE, Target Process ID : %d ##\n", pids[pid_index]);
-			print_process_cmdline(pids[pid_index]);
+			if(print_process_cmdline(pids[pid_index]) != EXIT_SUCCESS)
+				result = EXIT_FAILURE;
 		}
 		if(show_io)
 		{
 			printf("## Attribute : IO, Target Process ID : %d ##\n", pids[pid_index]);
-			print_process_io(pids[pid_index]);
+			if(print_process_io(pids[pid_index]) != EXIT_SUCCESS)
+				result = EXIT_FAILURE;
 		}
 		if(show_status)
 		{
 			printf("## Attribute : STAT, Target Process ID : %d ##\n", pids[pid_index]);
-			print_process_status(pids[pid_index]);
+			if(print_process_status(pids[pid_index]) != EXIT_SUCCESS)
+				result = EXIT_FAILURE;
 		}
 		if(show_environ)
 		{
 			printf("## Attribute : _ENVIRON, Target Process ID : %d ##\n", pids[pid_index]);
 			string_list empty_keywords = {0};
-			print_process_environ(pids[pid_index], empty_keywords);
+			if(print_process_environ(pids[pid_index], empty_keywords) != EXIT_SUCCESS)
+				result = EXIT_FAILURE;
 		}
 	}
 	free(pids);
+	return result;
 }

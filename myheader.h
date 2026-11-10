@@ -1,3 +1,6 @@
+#ifndef LSPROC_MYHEADER_H
+#define LSPROC_MYHEADER_H
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,16 +49,18 @@ typedef struct program_options{
 }program_options;
 
 
-void print_process_fds(int pid);
-void print_process_status(int pid);
-void print_process_cmdline(int pid);
-void print_process_io(int pid);
-void print_process_environ(int pid, string_list keywords);
-void print_interrupts(void);
-void print_filesystems(void);
-void print_uptime(void);
-void print_kernel_version(void);
-void print_user_process_attributes(string_list attributes);
+int print_process_fds(int pid);
+int print_process_status(int pid);
+int print_process_cmdline(int pid);
+int print_process_io(int pid);
+int print_process_environ(int pid, string_list keywords);
+int print_interrupts(void);
+int print_filesystems(void);
+int print_uptime(void);
+int print_kernel_version(void);
+int print_user_process_attributes(string_list attributes);
 int parse_pid(const char *text);
 
-void execute_options(program_options opts);
+int execute_options(program_options opts);
+
+#endif /* LSPROC_MYHEADER_H */

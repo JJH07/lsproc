@@ -13,13 +13,14 @@ int main(int argc, char *argv[])
 	program_options opts;
 	memset(&opts, 0, sizeof(program_options));
 
+	int result = EXIT_FAILURE;
 	int parse_result = parse_options(argc, argv, &opts);
 	
 	if(parse_result == 0)
-		execute_options(opts);
+		result = execute_options(opts);
 	free_options(&opts);
 
-	return 0;
+	return result;
 }
 
 static int parse_options(int argc, char *argv[], program_options *opt)
@@ -28,10 +29,12 @@ static int parse_options(int argc, char *argv[], program_options *opt)
 	while(arg_index < argc)
 	{
 		string_list *list = NULL;
-		if(argv[arg_index][0] == '\0')
+		const char *argument = argv[arg_index];
+		if(argument[0] != '-' || argument[1] == '\0' || argument[2] != '\0' ||
+		   strchr("ftcnmkwelvrso", argument[1]) == NULL)
 		{
-			++arg_index;
-			continue;
+			fprintf(stderr, "Invalid option: %s\n", argument);
+			return -1;
 		}
 		switch(argv[arg_index++][1])
 		{
@@ -129,6 +132,17 @@ static int parse_options(int argc, char *argv[], program_options *opt)
 				++arg_index;
 			}
 		}
+		if(argument[1] == 'o' && (list->count != 1 || list->items[0][0] == '\0'))
+		{
+			fprintf(stderr, "Option -o requires exactly one output file.\n");
+			return -1;
+		}
+		if((argument[1] == 'k' || argument[1] == 's') && list->count == 0)
+		{
+			fprintf(stderr, "Option -%c requires an argument.\n", argument[1]);
+			return -1;
+		}
+
 	}
 	if(opt->flags & FLAG_R)
 	{
