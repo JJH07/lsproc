@@ -1,194 +1,103 @@
 #include "myheader.h"
 
-void ssu_lsproc(int argc, char *argv[], options opt)
+/* Run within the option's child, so an omitted PID still means that child. */
+static void execute_pid_option(int flag, string_list pids, string_list keywords)
 {
-	pid_t pid;
-	int fd = -1;
-	int status;
-
-	if(opt.bit & FLAG_o)
+	char default_pid[32];
+	char *default_items[] = {default_pid};
+	if(pids.count == 0)
 	{
-		if((fd = open(opt.Redirect.name[0], O_RDWR | O_CREAT | O_TRUNC, 0644)) == -1)
+		snprintf(default_pid, sizeof(default_pid), "%d", (int)getpid());
+		pids.items = default_items;
+		pids.count = 1;
+	}
+
+	for(int i = 0; i < pids.count; ++i)
+	{
+		if(pids.count > 1)
+			printf("([/proc/%s/fd])\n", pids.items[i]);
+		if(i >= MAX_PID_ARGUMENTS)
 		{
-			perror(opt.Redirect.name[0]);
-			return ;
+			printf("Maximum Number of Argument Exceeded. :: %s\n", pids.items[i]);
+			continue;
 		}
-		dup2(fd, 1);
+
+		int pid = parse_pid(pids.items[i]);
+		switch(flag)
+		{
+			case FLAG_F: print_process_fds(pid); break;
+			case FLAG_T: print_process_status(pid); break;
+			case FLAG_C: print_process_cmdline(pid); break;
+			case FLAG_N: print_process_io(pid); break;
+			case FLAG_M: print_process_environ(pid, keywords); break;
+		}
+	}
+}
+
+void execute_options(program_options opts)
+{
+	pid_t child_pid;
+	int output_fd = -1;
+	int child_status;
+
+	if(opts.flags & FLAG_O)
+	{
+		const char *output_path = opts.output_paths.count ? opts.output_paths.items[0] : "";
+		if((output_fd = open(output_path, O_RDWR | O_CREAT | O_TRUNC, 0644)) == -1)
+		{
+			perror(output_path);
+			return;
+		}
+		if(dup2(output_fd, STDOUT_FILENO) == -1)
+		{
+			perror("dup2() error : ");
+			close(output_fd);
+			return;
+		}
 	}
 
 	printf(">: ssu_lsproc start.:<\n");
 	fflush(stdout);
-	for(int i = 0; i <= 11; i++)
+	/* Keep the original flag order and one fork/wait pair per selected flag,
+	 * including the modifier flags K and R. O only redirects stdout. */
+	for(int flag = FLAG_F; flag <= FLAG_S; flag <<= 1)
 	{
-		int bit = 1 << i;
-		if((opt.bit & bit) == 0)
-		{
+		if((opts.flags & flag) == 0)
 			continue;
-		}
-		if((pid = fork()) < 0)
-		{ 
+		if((child_pid = fork()) < 0)
+		{
 			perror("fork() error : ");
 			exit(0);
 		}
-		else if(pid == 0)
+		else if(child_pid == 0)
 		{
-			switch(bit)
+			switch(flag)
 			{
-				case FLAG_f :
-				{
-					if(opt.fPID.count == 0)
-					{
-						sprintf(opt.fPID.name[opt.fPID.count++], "%d", getpid());
-					}
-					for(int fidx = 0; fidx < opt.fPID.count; fidx++)
-					{
-						if(opt.fPID.count > 1)
-						{
-							printf("([/proc/%s/fd])\n", opt.fPID.name[fidx]);
-						}
-						if(fidx < 16)
-						{
-							option_f(atoi(opt.fPID.name[fidx]));
-						}
-						else
-						{
-							printf("Maximum Number of Argument Exceeded. :: %s\n", opt.fPID.name[fidx]);
-						}
-					}
-					break;
-				}
-				case FLAG_t :
-				{
-					if(opt.tPID.count == 0)
-					{
-						sprintf(opt.tPID.name[opt.tPID.count++], "%d", getpid());
-					}
-					for(int tidx = 0; tidx < opt.tPID.count; tidx++)
-					{
-						if(opt.tPID.count > 1)
-						{
-							printf("([/proc/%s/fd])\n", opt.tPID.name[tidx]);
-						}
-						if(tidx < 16)
-						{
-							option_t(atoi(opt.tPID.name[tidx]));
-						}
-						else
-						{
-							printf("Maximum Number of Argument Exceeded. :: %s\n", opt.tPID.name[tidx]);
-						}
-					}
-					break;
-				}
-				case FLAG_c :
-				{
-					if(opt.cPID.count == 0)
-					{
-						sprintf(opt.cPID.name[opt.cPID.count++], "%d", getpid());
-					}
-					for(int cidx = 0; cidx < opt.cPID.count; cidx++)
-					{
-						if(opt.cPID.count > 1)
-						{
-							printf("([/proc/%s/fd])\n", opt.cPID.name[cidx]);
-						}
-						if(cidx < 16)
-						{
-							option_c(atoi(opt.cPID.name[cidx]));
-						}
-						else
-						{
-							printf("Maximum Number of Argument Exceeded. :: %s\n", opt.cPID.name[cidx]);
-						}
-					}
-					break;
-				}
-				case FLAG_n :
-				{
-					if(opt.nPID.count == 0)
-					{
-						sprintf(opt.nPID.name[opt.nPID.count++], "%d", getpid());
-					}
-					for(int nidx = 0; nidx < opt.nPID.count; nidx++)
-					{
-						if(opt.nPID.count > 1)
-						{
-							printf("([/proc/%s/fd])\n", opt.nPID.name[nidx]);
-						}
-						if(nidx < 16)
-						{
-							option_n(atoi(opt.nPID.name[nidx]));
-						}
-						else
-						{
-							printf("Maximum Number of Argument Exceeded. :: %s\n", opt.nPID.name[nidx]);
-						}
-					}
-					break;
-				}
-				case FLAG_m :
-				{
-					if(opt.mPID.count == 0)
-					{
-						sprintf(opt.mPID.name[opt.mPID.count++], "%d", getpid());
-					}
-					for(int midx = 0; midx < opt.mPID.count; midx++)
-					{
-						if(opt.mPID.count > 1)
-						{
-							printf("([/proc/%s/fd])\n", opt.mPID.name[midx]);
-						}
-						if(midx < 16)
-						{
-							option_m(atoi(opt.mPID.name[midx]), opt.key);
-						}
-						else
-						{
-							printf("Maximum Number of Argument Exceeded. :: %s\n", opt.mPID.name[midx]);
-						}
-					}
-					break;
-				}
-				case FLAG_w :
-				{
-					option_w();
-					break;
-				}
-				case FLAG_e :
-				{
-					option_e();
-					break;
-				}
-				case FLAG_l :
-				{
-					option_l();
-					break;
-				}
-				case FLAG_v :
-				{
-					option_v();
-					break;
-				}
-				case FLAG_s :
-				{
-					option_s(opt.Attributes);
-					break;
-				}
+				case FLAG_F: execute_pid_option(flag, opts.fd_pids, opts.keywords); break;
+				case FLAG_T: execute_pid_option(flag, opts.status_pids, opts.keywords); break;
+				case FLAG_C: execute_pid_option(flag, opts.cmdline_pids, opts.keywords); break;
+				case FLAG_N: execute_pid_option(flag, opts.io_pids, opts.keywords); break;
+				case FLAG_M: execute_pid_option(flag, opts.environ_pids, opts.keywords); break;
+				case FLAG_W: print_interrupts(); break;
+				case FLAG_E: print_filesystems(); break;
+				case FLAG_L: print_uptime(); break;
+				case FLAG_V: print_kernel_version(); break;
+				case FLAG_S: print_user_process_attributes(opts.attributes); break;
 			}
 			exit(0);
 		}
 		else
 		{
-			if(wait(&status) < 0) // 자식프로세스 종료 기다립니다.
-			{
+			pid_t waited_pid;
+			do {
+				waited_pid = wait(&child_status);
+			} while(waited_pid < 0 && errno == EINTR);
+			if(waited_pid < 0)
 				printf("wait error\n");
-			}
 		}
 	}
 	printf(">: ssu_lsproc terminated.:<\n");
 
-	if(fd > -1)
-	{
-		close(fd);
-	}
+	if(output_fd > -1 && output_fd != STDOUT_FILENO)
+		close(output_fd);
 }

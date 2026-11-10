@@ -1,172 +1,229 @@
 #include "myheader.h"
 
-void parse(int argc, char *argv[], options *opt);
-int compareFuncPID(const void *a, const void *b);
-int compareFuncKEY(const void *a, const void *b);
-void ssu_lsproc(int argc, char *argv[], options opt); // ssu_lsproc 함수입니다.
+static int parse_options(int argc, char *argv[], program_options *opt);
+static void free_options(program_options *opt);
+static void sort_pid_arguments(string_list *pids);
+static int compare_pid_strings(const void *a, const void *b);
+static int compare_keywords(const void *a, const void *b);
 
-void print_option(options *opt);
+void print_options_debug(program_options *opt);
 
 int main(int argc, char *argv[])
 {
-	options option;
-	memset(&option, 0, sizeof(options));
+	program_options opts;
+	memset(&opts, 0, sizeof(program_options));
 
-	parse(argc, argv, &option);
+	int parse_result = parse_options(argc, argv, &opts);
 	
-	ssu_lsproc(argc, argv, option);
+	if(parse_result == 0)
+		execute_options(opts);
+	free_options(&opts);
 
 	return 0;
 }
 
-void parse(int argc, char *argv[], options *opt)
+static int parse_options(int argc, char *argv[], program_options *opt)
 {
-	int idx = 1;
-	while(idx < argc)
+	int arg_index = 1;
+	while(arg_index < argc)
 	{
-		namelist *list = NULL;
-		switch(argv[idx++][1])
+		string_list *list = NULL;
+		if(argv[arg_index][0] == '\0')
+		{
+			++arg_index;
+			continue;
+		}
+		switch(argv[arg_index++][1])
 		{
 			case 'f':
 			{
-				opt->bit |= FLAG_f;
-				list = &opt->fPID;
+				opt->flags |= FLAG_F;
+				list = &opt->fd_pids;
 				break;
 			}
 			case 't':
 			{
-				opt->bit |= FLAG_t;
-				list = &opt->tPID;
+				opt->flags |= FLAG_T;
+				list = &opt->status_pids;
 				break;
 			}
 			case 'c':
 			{
-				opt->bit |= FLAG_c;
-				list = &opt->cPID;
+				opt->flags |= FLAG_C;
+				list = &opt->cmdline_pids;
 				break;
 			}
 			case 'n':
 			{
-				opt->bit |= FLAG_n;
-				list = &opt->nPID;
+				opt->flags |= FLAG_N;
+				list = &opt->io_pids;
 				break;
 			}
 			case 'm':
 			{
-				opt->bit |= FLAG_m;
-				list = &opt->mPID;
+				opt->flags |= FLAG_M;
+				list = &opt->environ_pids;
 				break;
 			}
 			case 'k':
 			{
-				opt->bit |= FLAG_k;
-				list = &opt->key;
+				opt->flags |= FLAG_K;
+				list = &opt->keywords;
 				break;
 			}
 			case 'w':
 			{
-				opt->bit |= FLAG_w;
+				opt->flags |= FLAG_W;
 				break;
 			}
 			case 'e':
 			{
-				opt->bit |= FLAG_e;
+				opt->flags |= FLAG_E;
 				break;
 			}
 			case 'l':
 			{
-				opt->bit |= FLAG_l;
+				opt->flags |= FLAG_L;
 				break;
 			}
 			case 'v':
 			{
-				opt->bit |= FLAG_v;
+				opt->flags |= FLAG_V;
 				break;
 			}
 			case 'r':
 			{
-				opt->bit |= FLAG_r;
+				opt->flags |= FLAG_R;
 				break;
 			}
 			case 's':
 			{
-				opt->bit |= FLAG_s;
-				list = &opt->Attributes;
+				opt->flags |= FLAG_S;
+				list = &opt->attributes;
 				break;
 			}
 			case 'o':
 			{
-				opt->bit |= FLAG_o;
-				list = &opt->Redirect;
+				opt->flags |= FLAG_O;
+				list = &opt->output_paths;
 				break;
 			}
 		}
 		if(list != NULL)
 		{
 			list->count = 0;
-			while(idx < argc)
+			while(arg_index < argc)
 			{
-				if(argv[idx][0] == '-')
+				if(argv[arg_index][0] == '-')
 				{
 					break;
 				}
-				strcpy(list->name[list->count++], argv[idx]);
-				++idx;
+				char **items = realloc(list->items, ((size_t)list->count + 1) * sizeof(*items));
+				if(items == NULL)
+				{
+					perror("realloc() error : ");
+					return -1;
+				}
+				list->items = items;
+				list->items[list->count++] = argv[arg_index];
+				++arg_index;
 			}
 		}
 	}
-	if(opt->bit & FLAG_r)
+	if(opt->flags & FLAG_R)
 	{
-		qsort(opt->fPID.name, (opt->fPID.count < 16 ? opt->fPID.count : 16), sizeof(opt->fPID.name[0]), compareFuncPID);
-		qsort(opt->tPID.name, (opt->tPID.count < 16 ? opt->tPID.count : 16), sizeof(opt->tPID.name[0]), compareFuncPID);
-		qsort(opt->cPID.name, (opt->cPID.count < 16 ? opt->cPID.count : 16), sizeof(opt->cPID.name[0]), compareFuncPID);
-		qsort(opt->nPID.name, (opt->nPID.count < 16 ? opt->nPID.count : 16), sizeof(opt->nPID.name[0]), compareFuncPID);
-		qsort(opt->mPID.name, (opt->mPID.count < 16 ? opt->mPID.count : 16), sizeof(opt->mPID.name[0]), compareFuncPID);
-		qsort(opt->key.name, (opt->key.count < 16 ? opt->key.count : 16), sizeof(opt->key.name[0]), compareFuncKEY);
+		sort_pid_arguments(&opt->fd_pids);
+		sort_pid_arguments(&opt->status_pids);
+		sort_pid_arguments(&opt->cmdline_pids);
+		sort_pid_arguments(&opt->io_pids);
+		sort_pid_arguments(&opt->environ_pids);
+		if(opt->keywords.count > 1)
+		{
+			int count = opt->keywords.count < MAX_SORT_ARGUMENTS ? opt->keywords.count : MAX_SORT_ARGUMENTS;
+			qsort(opt->keywords.items, count, sizeof(opt->keywords.items[0]), compare_keywords);
+		}
+	}
+	return 0;
+}
+
+/* The lists own their pointer arrays, but never the argv strings. */
+static void free_options(program_options *opt)
+{
+	string_list *lists[] = {
+		&opt->fd_pids, &opt->status_pids, &opt->cmdline_pids,
+		&opt->io_pids, &opt->environ_pids, &opt->keywords,
+		&opt->attributes, &opt->output_paths
+	};
+	for(size_t i = 0; i < sizeof(lists) / sizeof(lists[0]); ++i)
+	{
+		free(lists[i]->items);
+		lists[i]->items = NULL;
+		lists[i]->count = 0;
 	}
 }
 
-int compareFuncPID(const void *a, const void *b)
+static void sort_pid_arguments(string_list *pids)
 {
-	return atoi((char *)a) > atoi((char *)b);
-}
-int compareFuncKEY(const void *a, const void *b)
-{
-	return strcmp((char *)a, (char *)b);
+	if(pids->count > 1)
+	{
+		int count = pids->count < MAX_SORT_ARGUMENTS ? pids->count : MAX_SORT_ARGUMENTS;
+		qsort(pids->items, count, sizeof(pids->items[0]), compare_pid_strings);
+	}
 }
 
-void print_option(options *opt)
+int parse_pid(const char *text)
 {
-	printf("%d %d\n", opt->bit & FLAG_f, opt->fPID.count);
-	for(int i = 0; i < opt->fPID.count; i++)
+	char *end;
+	errno = 0;
+	long value = strtol(text, &end, 10);
+	if(errno == ERANGE || end == text || *end != '\0' || value < 0 || value > INT_MAX)
+		return 0;
+	return (int)value;
+}
+
+static int compare_pid_strings(const void *a, const void *b)
+{
+	int left = parse_pid(*(char *const *)a);
+	int right = parse_pid(*(char *const *)b);
+	return (left > right) - (left < right);
+}
+static int compare_keywords(const void *a, const void *b)
+{
+	return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+void print_options_debug(program_options *opt)
+{
+	printf("%d %d\n", opt->flags & FLAG_F, opt->fd_pids.count);
+	for(int i = 0; i < opt->fd_pids.count; i++)
 	{
-		printf("%s ", opt->fPID.name[i]);
+		printf("%s ", opt->fd_pids.items[i]);
 	}
-	printf("\n%d %d\n", opt->bit & FLAG_t, opt->tPID.count);;
-	for(int i = 0; i < opt->tPID.count; i++)
+	printf("\n%d %d\n", opt->flags & FLAG_T, opt->status_pids.count);;
+	for(int i = 0; i < opt->status_pids.count; i++)
 	{
-		printf("%s ", opt->tPID.name[i]);
+		printf("%s ", opt->status_pids.items[i]);
 	}
-	printf("\n%d %d\n", opt->bit & FLAG_c, opt->cPID.count);
-	for(int i = 0; i < opt->cPID.count; i++)
+	printf("\n%d %d\n", opt->flags & FLAG_C, opt->cmdline_pids.count);
+	for(int i = 0; i < opt->cmdline_pids.count; i++)
 	{
-		printf("%s ", opt->cPID.name[i]);
+		printf("%s ", opt->cmdline_pids.items[i]);
 	}
-	printf("\n%d %d\n", opt->bit & FLAG_n, opt->nPID.count);
-	for(int i = 0; i < opt->nPID.count; i++)
+	printf("\n%d %d\n", opt->flags & FLAG_N, opt->io_pids.count);
+	for(int i = 0; i < opt->io_pids.count; i++)
 	{
-		printf("%s ", opt->nPID.name[i]);
+		printf("%s ", opt->io_pids.items[i]);
 	}
-	printf("\n%d %d\n", opt->bit & FLAG_m, opt->mPID.count);
-	for(int i = 0; i < opt->mPID.count; i++)
+	printf("\n%d %d\n", opt->flags & FLAG_M, opt->environ_pids.count);
+	for(int i = 0; i < opt->environ_pids.count; i++)
 	{
-		printf("%s ", opt->mPID.name[i]);
+		printf("%s ", opt->environ_pids.items[i]);
 	}
-	printf("\n%d\n", opt->bit & FLAG_k);
-	printf("%d\n", opt->bit & FLAG_w);
-	printf("%d\n", opt->bit & FLAG_e);
-	printf("%d\n", opt->bit & FLAG_l);
-	printf("%d\n", opt->bit & FLAG_v);
-	printf("%d\n", opt->bit & FLAG_r);
-	printf("%d\n", opt->bit & FLAG_s);
+	printf("\n%d\n", opt->flags & FLAG_K);
+	printf("%d\n", opt->flags & FLAG_W);
+	printf("%d\n", opt->flags & FLAG_E);
+	printf("%d\n", opt->flags & FLAG_L);
+	printf("%d\n", opt->flags & FLAG_V);
+	printf("%d\n", opt->flags & FLAG_R);
+	printf("%d\n", opt->flags & FLAG_S);
 }

@@ -8,46 +8,54 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <limits.h>
 
-#define FLAG_f 1
-#define FLAG_t 2
-#define FLAG_c 4
-#define FLAG_n 8
-#define FLAG_m 16
-#define FLAG_k 32
-#define FLAG_w 64
-#define FLAG_e 128
-#define FLAG_l 256
-#define FLAG_v 512
-#define FLAG_r 1024
-#define FLAG_s 2048
-#define FLAG_o 4096
+#define MAX_PID_ARGUMENTS 16
+#define MAX_SORT_ARGUMENTS 16
 
-typedef struct names{
+#define FLAG_F 1
+#define FLAG_T 2
+#define FLAG_C 4
+#define FLAG_N 8
+#define FLAG_M 16
+#define FLAG_K 32
+#define FLAG_W 64
+#define FLAG_E 128
+#define FLAG_L 256
+#define FLAG_V 512
+#define FLAG_R 1024
+#define FLAG_S 2048
+#define FLAG_O 4096
+
+typedef struct string_list{
 	int count;
-	char name[64][256];
-}namelist;
+	/* Parsed lists own this array, but borrow the strings from argv. */
+	char **items;
+}string_list;
 
-typedef struct opt_table{
-	int bit;
-	namelist fPID;
-	namelist tPID;
-	namelist cPID;
-	namelist nPID;
-	namelist mPID;
-	namelist key;
-	namelist Attributes;
-	namelist Redirect;
-}options;
+typedef struct program_options{
+	int flags;
+	string_list fd_pids;
+	string_list status_pids;
+	string_list cmdline_pids;
+	string_list io_pids;
+	string_list environ_pids;
+	string_list keywords;
+	string_list attributes;
+	string_list output_paths;
+}program_options;
 
 
-void option_f(int fPID);
-void option_t(int tPID);
-void option_c(int cPID);
-void option_n(int nPID);
-void option_m(int mPID, namelist key);
-void option_w();
-void option_e();
-void option_l();
-void option_v();
-void option_s(namelist Attributes);
+void print_process_fds(int pid);
+void print_process_status(int pid);
+void print_process_cmdline(int pid);
+void print_process_io(int pid);
+void print_process_environ(int pid, string_list keywords);
+void print_interrupts(void);
+void print_filesystems(void);
+void print_uptime(void);
+void print_kernel_version(void);
+void print_user_process_attributes(string_list attributes);
+int parse_pid(const char *text);
+
+void execute_options(program_options opts);
