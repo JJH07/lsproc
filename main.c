@@ -1,12 +1,12 @@
 #include "myheader.h"
 
-static int parse_options(int argc, char *argv[], program_options *opt);
-static void free_options(program_options *opt);
+static int parse_options(int argc, char *argv[], program_options *opts);
+static void free_options(program_options *opts);
 static void sort_pid_arguments(string_list *pids);
 static int compare_pid_strings(const void *a, const void *b);
 static int compare_keywords(const void *a, const void *b);
 
-void print_options_debug(program_options *opt);
+void print_options_debug(program_options *opts);
 
 int main(int argc, char *argv[])
 {
@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
 	return result;
 }
 
-static int parse_options(int argc, char *argv[], program_options *opt)
+static int parse_options(int argc, char *argv[], program_options *opts)
 {
 	int arg_index = 1;
 	while(arg_index < argc)
@@ -40,75 +40,75 @@ static int parse_options(int argc, char *argv[], program_options *opt)
 		{
 			case 'f':
 			{
-				opt->flags |= FLAG_F;
-				list = &opt->fd_pids;
+				opts->flags |= FLAG_F;
+				list = &opts->fd_pids;
 				break;
 			}
 			case 't':
 			{
-				opt->flags |= FLAG_T;
-				list = &opt->status_pids;
+				opts->flags |= FLAG_T;
+				list = &opts->status_pids;
 				break;
 			}
 			case 'c':
 			{
-				opt->flags |= FLAG_C;
-				list = &opt->cmdline_pids;
+				opts->flags |= FLAG_C;
+				list = &opts->cmdline_pids;
 				break;
 			}
 			case 'n':
 			{
-				opt->flags |= FLAG_N;
-				list = &opt->io_pids;
+				opts->flags |= FLAG_N;
+				list = &opts->io_pids;
 				break;
 			}
 			case 'm':
 			{
-				opt->flags |= FLAG_M;
-				list = &opt->environ_pids;
+				opts->flags |= FLAG_M;
+				list = &opts->environ_pids;
 				break;
 			}
 			case 'k':
 			{
-				opt->flags |= FLAG_K;
-				list = &opt->keywords;
+				opts->flags |= FLAG_K;
+				list = &opts->keywords;
 				break;
 			}
 			case 'w':
 			{
-				opt->flags |= FLAG_W;
+				opts->flags |= FLAG_W;
 				break;
 			}
 			case 'e':
 			{
-				opt->flags |= FLAG_E;
+				opts->flags |= FLAG_E;
 				break;
 			}
 			case 'l':
 			{
-				opt->flags |= FLAG_L;
+				opts->flags |= FLAG_L;
 				break;
 			}
 			case 'v':
 			{
-				opt->flags |= FLAG_V;
+				opts->flags |= FLAG_V;
 				break;
 			}
 			case 'r':
 			{
-				opt->flags |= FLAG_R;
+				opts->flags |= FLAG_R;
 				break;
 			}
 			case 's':
 			{
-				opt->flags |= FLAG_S;
-				list = &opt->attributes;
+				opts->flags |= FLAG_S;
+				list = &opts->attributes;
 				break;
 			}
 			case 'o':
 			{
-				opt->flags |= FLAG_O;
-				list = &opt->output_paths;
+				opts->flags |= FLAG_O;
+				list = &opts->output_paths;
 				break;
 			}
 		}
@@ -144,29 +144,29 @@ static int parse_options(int argc, char *argv[], program_options *opt)
 		}
 
 	}
-	if(opt->flags & FLAG_R)
+	if(opts->flags & FLAG_R)
 	{
-		sort_pid_arguments(&opt->fd_pids);
-		sort_pid_arguments(&opt->status_pids);
-		sort_pid_arguments(&opt->cmdline_pids);
-		sort_pid_arguments(&opt->io_pids);
-		sort_pid_arguments(&opt->environ_pids);
-		if(opt->keywords.count > 1)
+		sort_pid_arguments(&opts->fd_pids);
+		sort_pid_arguments(&opts->status_pids);
+		sort_pid_arguments(&opts->cmdline_pids);
+		sort_pid_arguments(&opts->io_pids);
+		sort_pid_arguments(&opts->environ_pids);
+		if(opts->keywords.count > 1)
 		{
-			int count = opt->keywords.count < MAX_SORT_ARGUMENTS ? opt->keywords.count : MAX_SORT_ARGUMENTS;
-			qsort(opt->keywords.items, count, sizeof(opt->keywords.items[0]), compare_keywords);
+			int count = opts->keywords.count < MAX_SORT_ARGUMENTS ? opts->keywords.count : MAX_SORT_ARGUMENTS;
+			qsort(opts->keywords.items, count, sizeof(opts->keywords.items[0]), compare_keywords);
 		}
 	}
 	return 0;
 }
 
 /* The lists own their pointer arrays, but never the argv strings. */
-static void free_options(program_options *opt)
+static void free_options(program_options *opts)
 {
 	string_list *lists[] = {
-		&opt->fd_pids, &opt->status_pids, &opt->cmdline_pids,
-		&opt->io_pids, &opt->environ_pids, &opt->keywords,
-		&opt->attributes, &opt->output_paths
+		&opts->fd_pids, &opts->status_pids, &opts->cmdline_pids,
+		&opts->io_pids, &opts->environ_pids, &opts->keywords,
+		&opts->attributes, &opts->output_paths
 	};
 	for(size_t i = 0; i < sizeof(lists) / sizeof(lists[0]); ++i)
 	{
@@ -206,38 +206,38 @@ static int compare_keywords(const void *a, const void *b)
 	return strcmp(*(char *const *)a, *(char *const *)b);
 }
 
-void print_options_debug(program_options *opt)
+void print_options_debug(program_options *opts)
 {
-	printf("%d %d\n", opt->flags & FLAG_F, opt->fd_pids.count);
-	for(int i = 0; i < opt->fd_pids.count; i++)
+	printf("%d %d\n", opts->flags & FLAG_F, opts->fd_pids.count);
+	for(int i = 0; i < opts->fd_pids.count; i++)
 	{
-		printf("%s ", opt->fd_pids.items[i]);
+		printf("%s ", opts->fd_pids.items[i]);
 	}
-	printf("\n%d %d\n", opt->flags & FLAG_T, opt->status_pids.count);;
-	for(int i = 0; i < opt->status_pids.count; i++)
+	printf("\n%d %d\n", opts->flags & FLAG_T, opts->status_pids.count);;
+	for(int i = 0; i < opts->status_pids.count; i++)
 	{
-		printf("%s ", opt->status_pids.items[i]);
+		printf("%s ", opts->status_pids.items[i]);
 	}
-	printf("\n%d %d\n", opt->flags & FLAG_C, opt->cmdline_pids.count);
-	for(int i = 0; i < opt->cmdline_pids.count; i++)
+	printf("\n%d %d\n", opts->flags & FLAG_C, opts->cmdline_pids.count);
+	for(int i = 0; i < opts->cmdline_pids.count; i++)
 	{
-		printf("%s ", opt->cmdline_pids.items[i]);
+		printf("%s ", opts->cmdline_pids.items[i]);
 	}
-	printf("\n%d %d\n", opt->flags & FLAG_N, opt->io_pids.count);
-	for(int i = 0; i < opt->io_pids.count; i++)
+	printf("\n%d %d\n", opts->flags & FLAG_N, opts->io_pids.count);
+	for(int i = 0; i < opts->io_pids.count; i++)
 	{
-		printf("%s ", opt->io_pids.items[i]);
+		printf("%s ", opts->io_pids.items[i]);
 	}
-	printf("\n%d %d\n", opt->flags & FLAG_M, opt->environ_pids.count);
-	for(int i = 0; i < opt->environ_pids.count; i++)
+	printf("\n%d %d\n", opts->flags & FLAG_M, opts->environ_pids.count);
+	for(int i = 0; i < opts->environ_pids.count; i++)
 	{
-		printf("%s ", opt->environ_pids.items[i]);
+		printf("%s ", opts->environ_pids.items[i]);
 	}
-	printf("\n%d\n", opt->flags & FLAG_K);
-	printf("%d\n", opt->flags & FLAG_W);
-	printf("%d\n", opt->flags & FLAG_E);
-	printf("%d\n", opt->flags & FLAG_L);
-	printf("%d\n", opt->flags & FLAG_V);
-	printf("%d\n", opt->flags & FLAG_R);
-	printf("%d\n", opt->flags & FLAG_S);
+	printf("\n%d\n", opts->flags & FLAG_K);
+	printf("%d\n", opts->flags & FLAG_W);
+	printf("%d\n", opts->flags & FLAG_E);
+	printf("%d\n", opts->flags & FLAG_L);
+	printf("%d\n", opts->flags & FLAG_V);
+	printf("%d\n", opts->flags & FLAG_R);
+	printf("%d\n", opts->flags & FLAG_S);
 }
